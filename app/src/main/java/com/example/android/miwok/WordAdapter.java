@@ -1,6 +1,7 @@
 package com.example.android.miwok;
 
 import android.app.Activity;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -18,10 +19,32 @@ import java.util.ArrayList;
 public class WordAdapter extends ArrayAdapter<Word> {
     private int mColorResourceId;
     private MediaPlayer mediaPlayer;
+    private AudioManager audioManager;
+    private AudioManager.OnAudioFocusChangeListener onAudioFocusChangeListener = new AudioManager.OnAudioFocusChangeListener() {
+        @Override
+        public void onAudioFocusChange(int i) {
+            switch (i){
+                case AudioManager.AUDIOFOCUS_GAIN:
+                    mediaPlayer.start();
+                    break;
+
+                case AudioManager.AUDIOFOCUS_LOSS:
+                    releaseMediaPlayer();
+                    break;
+
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                    mediaPlayer.pause();
+                    mediaPlayer.seekTo(0);
+                    break;
+            }
+        }
+    };
 
     public WordAdapter(Activity context, ArrayList<Word> words, int ColorResourceId){
         super(context, 0, words);
         mColorResourceId = ColorResourceId;
+        audioManager = (AudioManager) getContext().getSystemService(context.AUDIO_SERVICE);
     }
 
     @NonNull
@@ -35,8 +58,10 @@ public class WordAdapter extends ArrayAdapter<Word> {
         final Word currentWord = getItem(position);
 
         View textContainer = listItemView.findViewById(R.id.text_container);
+        View container = listItemView.findViewById(R.id.container);
         int color = ContextCompat.getColor(getContext(), mColorResourceId);
         textContainer.setBackgroundColor(color);
+        container.setBackgroundColor(color);
 
         TextView miwokTextView = listItemView.findViewById(R.id.miwok_text_view);
         miwokTextView.setText(currentWord.getMiwokTranslation());
@@ -57,14 +82,17 @@ public class WordAdapter extends ArrayAdapter<Word> {
             @Override
             public void onClick(View view) {
                 releaseMediaPlayer();
-                mediaPlayer = MediaPlayer.create(getContext(), currentWord.getmAudioResourceId());
-                mediaPlayer.start();
-                mediaPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
-                    @Override
-                    public void onCompletion(MediaPlayer mediaPlayer) {
-                        releaseMediaPlayer();
-                    }
-                });
+                int result = audioManager.requestAudioFocus(onAudioFocusChangeListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+                if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED){
+                    mediaPlayer = MediaPlayer.create(getContext(), currentWord.getmAudioResourceId());
+                    mediaPlayer.start();
+                    mediaPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+                        @Override
+                        public void onCompletion(MediaPlayer mediaPlayer) {
+                            releaseMediaPlayer();
+                        }
+                    });
+                }
             }
         });
 
@@ -80,6 +108,7 @@ public class WordAdapter extends ArrayAdapter<Word> {
             // Regardless of the current state of the media player, release its resources
             // because we no longer need it.
             mediaPlayer.release();
+            audioManager.abandonAudioFocus(onAudioFocusChangeListener);
 
             // Set the media player back to null. For our code, we've decided that
             // setting the media player to null is an easy way to tell that the media player
